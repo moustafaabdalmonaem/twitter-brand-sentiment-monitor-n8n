@@ -1,0 +1,334 @@
+{
+  "name": "Social Media Brand Monitor (AI Sentiment)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "45f98a63-67d3-498e-b89e-2c9db6cc9ecb",
+      "name": "Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.twitter.com/2/tweets/search/recent",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "YourBrandName -is:retweet"
+            },
+            {
+              "name": "max_results",
+              "value": "50"
+            },
+            {
+              "name": "tweet.fields",
+              "value": "created_at,author_id,public_metrics"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $credentials.twitterApi.bearerToken }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfcb1f68-6058-45ec-865b-9d306e81d46b",
+      "name": "Search Brand Mentions (Twitter)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        224,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "data",
+        "options": {}
+      },
+      "id": "3f1b1ddf-4cd6-441f-903e-09b9731e0c43",
+      "name": "Split Into Individual Mentions",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [
+        448,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $credentials.claudeApi.apiKey }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"model\": \"claude-sonnet-4-6\",\n  \"max_tokens\": 200,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": \"Analyze the sentiment of this social media post about a brand. Reply with ONLY a raw JSON object, no extra text: { sentiment: 'positive' | 'neutral' | 'negative', reason: string (short) }.\\n\\nPost: \\\"\" + $json.text + \"\\\"\"\n    }\n  ]\n}) }}",
+        "options": {}
+      },
+      "id": "91868f3b-e7a3-4baf-a8b5-ef29fa1c4328",
+      "name": "Analyze Sentiment (Claude AI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        672,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.first().json.content[0].text;\nconst cleaned = raw.replace(/```json|```/g, '').trim();\nconst sentiment = JSON.parse(cleaned);\nreturn [{ json: sentiment }];"
+      },
+      "id": "8a0d45d9-c187-4ab2-b160-ed3cb7e46f3e",
+      "name": "Parse Sentiment Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "PUT_YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Mentions",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Date": "={{ $now.toISO() }}",
+            "PostText": "={{ $('Split Into Individual Mentions').item.json.text }}",
+            "Sentiment": "={{ $json.sentiment }}",
+            "Reason": "={{ $json.reason }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "42a93f1f-dd70-4a05-9f31-d845fd07c248",
+      "name": "Log Mention to Sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1104,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "triggerAtDay": [
+                1
+              ],
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "id": "a2f2a767-f3f3-462c-a69e-a9bac1ec654d",
+      "name": "Every Monday at 9 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "documentId": {
+          "__rl": true,
+          "value": "PUT_YOUR_GOOGLE_SHEET_ID_HERE",
+          "mode": "id"
+        }
+      },
+      "id": "077aeb1f-6000-4995-972a-f8b52ac47b8a",
+      "name": "Get This Week's Mentions",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        224,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst total = items.length;\nconst positive = items.filter(i => i.json.Sentiment === 'positive').length;\nconst neutral = items.filter(i => i.json.Sentiment === 'neutral').length;\nconst negative = items.filter(i => i.json.Sentiment === 'negative').length;\n\nreturn [{\n  json: {\n    total,\n    positive,\n    neutral,\n    negative,\n    positivePercent: total ? Math.round((positive / total) * 100) : 0,\n    negativePercent: total ? Math.round((negative / total) * 100) : 0\n  }\n}];"
+      },
+      "id": "bf191a51-a428-4481-b2e5-e2dd4691e5e3",
+      "name": "Summarize Weekly Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        448,
+        272
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "you@example.com",
+        "subject": "Weekly Brand Mentions Report",
+        "message": "Here is your weekly brand monitoring summary:\n\nTotal mentions: {{ $json.total }}\nPositive: {{ $json.positive }} ({{ $json.positivePercent }}%)\nNeutral: {{ $json.neutral }}\nNegative: {{ $json.negative }} ({{ $json.negativePercent }}%)\n\nFull details are available in the Google Sheet.",
+        "options": {}
+      },
+      "id": "c896e099-0fce-4e9c-9c83-fffd0ee1c3e5",
+      "name": "Send Weekly Report Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        672,
+        272
+      ],
+      "webhookId": "ee229659-428d-4832-a0f4-f5c46e388ced"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Search Brand Mentions (Twitter)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Brand Mentions (Twitter)": {
+      "main": [
+        [
+          {
+            "node": "Split Into Individual Mentions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Individual Mentions": {
+      "main": [
+        [
+          {
+            "node": "Analyze Sentiment (Claude AI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Sentiment (Claude AI)": {
+      "main": [
+        [
+          {
+            "node": "Parse Sentiment Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Sentiment Result": {
+      "main": [
+        [
+          {
+            "node": "Log Mention to Sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every Monday at 9 AM": {
+      "main": [
+        [
+          {
+            "node": "Get This Week's Mentions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get This Week's Mentions": {
+      "main": [
+        [
+          {
+            "node": "Summarize Weekly Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Summarize Weekly Stats": {
+      "main": [
+        [
+          {
+            "node": "Send Weekly Report Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "131249a8-5c40-4039-bb17-ec2ad60dc9c1",
+  "meta": {
+    "instanceId": "d81e001e9d59947a771f174989353dc32d72525ea939391fa8cdf98b8208fb81"
+  },
+  "nodeGroups": [],
+  "id": "sjTVDgbbA3IYTRmv",
+  "tags": []
+}
